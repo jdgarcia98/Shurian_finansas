@@ -1,0 +1,7 @@
+python-telegram-bot[job-queue]==21.1.1
+supabase==2.4.3
+google-generativeai==0.5.2
+Pillow==10.3.0
+pdf2image==1.17.0
+python-dotenv==1.0.1
+apscheduler==3.10.4

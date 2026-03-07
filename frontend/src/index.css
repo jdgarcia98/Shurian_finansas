@@ -1,0 +1,141 @@
+:root {
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: #e2e8f0;
+  background-color: #030712;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --neon-green: #22c55e;
+  --neon-red: #ef4444;
+  --bg-card: #111827;
+  --accent-blue: #3b82f6;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.dashboard-container {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  padding: 2rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(to right, #60a5fa, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 2rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.stat-card {
+  padding: 1.5rem;
+  border-radius: 20px;
+  background: #1f2937;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin-top: 0.5rem;
+}
+
+.vencimientos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.expense-card {
+  background: #111827;
+  border-left: 4px solid var(--accent-blue);
+  padding: 1.25rem;
+  border-radius: 16px;
+  transition: transform 0.2s;
+}
+
+.expense-card:hover {
+  transform: translateY(-4px);
+}
+
+.expense-card.paid {
+  border-left-color: var(--neon-green);
+}
+
+.expense-card.pending {
+  border-left-color: var(--neon-red);
+}
+
+.neon-green { color: var(--neon-green); text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
+.neon-red { color: var(--neon-red); text-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 12px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+button.primary {
+  background: var(--accent-blue);
+  color: white;
+}
+
+button.primary:hover {
+  background: #2563eb;
+}
+
+.badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-personal { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.badge-shurian { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
