@@ -5,7 +5,7 @@ import google.generativeai as genai
 
 load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = "INVALID_TOKEN_FOR_DEBUGGING" # os.getenv("TELEGRAM_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
