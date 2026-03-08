@@ -36,11 +36,20 @@ def process_document(file_path: str) -> dict:
             print(f"Error abriendo imagen: {e}")
             return None
             
-    # 2. Llamada a Gemini (Multimodal)
+    # 1.1 Redimensionar si la imagen es muy grande para acelerar el procesamiento
     try:
-        # Usar el alias detectado en el diagnóstico: gemini-flash-latest
+        max_size = 1600
+        if image_to_process.width > max_size or image_to_process.height > max_size:
+            image_to_process.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            print(f"--- Imagen redimensionada a: {image_to_process.width}x{image_to_process.height}")
+    except Exception as e:
+        print(f"--- Error redimensionando: {e}")
+            
         print(f"--- Iniciando llamada a Gemini Flash para: {file_path}")
         model = genai.GenerativeModel('gemini-flash-latest')
+        
+        # Configurar un timeout más largo (60 segundos)
+        request_options = {"timeout": 60}
         
         prompt = """
         Eres un experto en procesar facturas y documentos financieros argentinos (VEPs, boletas de servicio, impuestos).
@@ -56,7 +65,7 @@ def process_document(file_path: str) -> dict:
         NO agregues texto antes ni después del JSON. NO uses bloques de código markdown.
         """
         
-        response = model.generate_content([prompt, image_to_process])
+        response = model.generate_content([prompt, image_to_process], request_options=request_options)
         text = response.text.strip()
         print(f"--- Respuesta recibida de Gemini (longitud: {len(text)})")
         
