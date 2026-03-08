@@ -39,6 +39,7 @@ def process_document(file_path: str) -> dict:
     # 2. Llamada a Gemini (Multimodal)
     try:
         # Usar el alias detectado en el diagnóstico: gemini-flash-latest
+        print(f"--- Iniciando llamada a Gemini Flash para: {file_path}")
         model = genai.GenerativeModel('gemini-flash-latest')
         
         prompt = """
@@ -57,6 +58,7 @@ def process_document(file_path: str) -> dict:
         
         response = model.generate_content([prompt, image_to_process])
         text = response.text.strip()
+        print(f"--- Respuesta recibida de Gemini (longitud: {len(text)})")
         
         # 3. Limpiar y parsear JSON (limpieza más agresiva)
         # Buscar el primer '{' y el último '}'
