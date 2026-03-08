@@ -44,7 +44,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Nuevo mensaje recibido: {update.message.message_id}")
     if not is_admin(update):
+        logger.warning(f"Acceso denegado para usuario {update.effective_user.id}")
         return
         
     message = update.message
@@ -74,6 +76,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         file_path = f"temp/{file_id}.{tipo_archivo}"
         
+        logger.info(f"Descargando archivo {file_id} a {file_path}")
         await new_file.download_to_drive(file_path)
         
         # Procesar con Gemini
@@ -313,10 +316,10 @@ async def editar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error en editar_gasto: {e}")
         await update.message.reply_text("Error al consultar gastos.")
 
-# Modificar handle_callback para manejar quickpay
 async def handle_callback_extended(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+    logger.info(f"--- NUEVO CALLBACK RECIBIDO: {data}")
     
     if data.startswith('quickpay_'):
         expense_id = data.split('_')[1]

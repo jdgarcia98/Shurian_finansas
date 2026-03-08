@@ -2,14 +2,20 @@ import google.generativeai as genai
 import json
 import re
 import os
+import logging
 from PIL import Image
 from pdf2image import convert_from_path
+
+logger = logging.getLogger(__name__)
 
 def process_document(file_path: str) -> dict:
     """
     Recibe la ruta de un archivo (PDF, JPG, PNG) descargado por Telegram.
     Si es PDF, convierte la primera página en imagen. Luego lo pasa a Gemini para extraer los datos.
     """
+    if not os.path.exists(file_path):
+        return None
+
     image_to_process = None
     temp_image_path = None
     
@@ -19,21 +25,21 @@ def process_document(file_path: str) -> dict:
             # Convertir la primera página del PDF a imagen (JPEG)
             pages = convert_from_path(file_path, first_page=1, last_page=1, dpi=200)
             if not pages:
-                print("No se pudieron extraer páginas del PDF.")
+                logger.error(f"No se pudieron extraer páginas del PDF: {file_path}")
                 return None
                 
             temp_image_path = file_path + "_temp.jpg"
             pages[0].save(temp_image_path, 'JPEG')
             image_to_process = Image.open(temp_image_path)
         except Exception as e:
-            print(f"Error convirtiendo PDF a imagen (¿Poppler instalado?): {e}")
+            logger.error(f"Error convirtiendo PDF a imagen (¿Poppler instalado?): {e}")
             return None
     else:
         # Asumimos que es una imagen directa (JPG, PNG)
         try:
             image_to_process = Image.open(file_path)
         except Exception as e:
-            print(f"Error abriendo imagen: {e}")
+            logger.error(f"Error abriendo imagen {file_path}: {e}")
             return None
             
     # 1.1 Redimensionar si la imagen es muy grande para acelerar el procesamiento
@@ -41,11 +47,12 @@ def process_document(file_path: str) -> dict:
         max_size = 1600
         if image_to_process.width > max_size or image_to_process.height > max_size:
             image_to_process.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            print(f"--- Imagen redimensionada a: {image_to_process.width}x{image_to_process.height}")
+            logger.info(f"Imagen redimensionada a: {image_to_process.width}x{image_to_process.height}")
     except Exception as e:
-        print(f"--- Error redimensionando: {e}")
+        logger.error(f"Error redimensionando: {e}")
             
-        print(f"--- Iniciando llamada a Gemini Flash para: {file_path}")
+    try:
+        logger.info(f"Iniciando llamada a Gemini Flash para: {file_path}")
         model = genai.GenerativeModel('gemini-flash-latest')
         
         # Configurar un timeout más largo (60 segundos)
@@ -67,7 +74,7 @@ def process_document(file_path: str) -> dict:
         
         response = model.generate_content([prompt, image_to_process], request_options=request_options)
         text = response.text.strip()
-        print(f"--- Respuesta recibida de Gemini (longitud: {len(text)})")
+        logger.info(f"Respuesta recibida de Gemini (longitud: {len(text)})")
         
         # 3. Limpiar y parsear JSON (limpieza más agresiva)
         # Buscar el primer '{' y el último '}'
@@ -104,13 +111,11 @@ def process_document(file_path: str) -> dict:
         return data
         
     except json.JSONDecodeError as je:
-        print(f"Error parseando JSON de Gemini. Error: {je}")
-        print(f"Respuesta cruda de Gemini: ------------------\n{text}\n------------------")
+        logger.error(f"Error parseando JSON de Gemini. Error: {je}")
+        logger.error(f"Respuesta cruda de Gemini: ------------------\n{text}\n------------------")
         return None
     except Exception as e:
-        print(f"Error inesperado en el procesamiento con Gemini: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error inesperado en el procesamiento con Gemini: {e}")
         return None
     finally:
         # Limpieza de archivo temporal si fue creado a partir de un PDF
