@@ -43,26 +43,31 @@ def process_document(file_path: str) -> dict:
         
         prompt = """
         Eres un experto en procesar facturas y documentos financieros argentinos (VEPs, boletas de servicio, impuestos).
-        Extrae obligatoriamente los siguientes datos del documento adjunto en formato JSON estricto.
+        Extrae los siguientes datos del documento adjunto y RESPONDE EXCLUSIVAMENTE CON UN OBJETO JSON VÁLIDO.
         
         Campos requeridos:
-        1. "monto_total": El monto final a pagar. (Solo el número).
+        1. "monto_total": El monto final a pagar. (Número sin símbolos).
         2. "fecha_vencimiento": La fecha de vencimiento en formato DD/MM/AAAA.
-        3. "codigo_pago": El código para pagar (Link, Banelco, VEP, o el string numérico del código de barras si lo detectas).
-        4. "entidad": El nombre de la empresa, organismo o impuesto (p. ej. AFIP, EPE, Municipalidad).
+        3. "codigo_pago": El código para pagar (Link, Banelco, VEP, o el string numérico del código de barras).
+        4. "entidad": El nombre de la empresa u organismo.
 
-        IMPORTANTE: Si detectas un código de barras visual, extrae el número largo que lo representa.
-        Responde exclusivamente con el objeto JSON, sin texto adicional.
+        Si no encuentras un dato, pon null. 
+        NO agregues texto antes ni después del JSON. NO uses bloques de código markdown.
         """
         
         response = model.generate_content([prompt, image_to_process])
-        text = response.text
+        text = response.text.strip()
         
-        # 3. Limpiar y parsear JSON
-        text_clean = re.sub(r'```json\s*', '', text)
-        text_clean = re.sub(r'\s*```', '', text_clean)
-        text_clean = text_clean.strip()
+        # 3. Limpiar y parsear JSON (limpieza más agresiva)
+        # Buscar el primer '{' y el último '}'
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
         
+        if start_idx != -1 and end_idx != -1:
+            text_clean = text[start_idx:end_idx+1]
+        else:
+            text_clean = text
+            
         data = json.loads(text_clean)
         
         # Parseo seguro a flotante
