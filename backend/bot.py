@@ -2,7 +2,15 @@ import logging
 import os
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import (
+    ApplicationBuilder, 
+    CommandHandler, 
+    ContextTypes, 
+    MessageHandler, 
+    CallbackQueryHandler, 
+    ConversationHandler, 
+    filters
+)
 from config import TELEGRAM_TOKEN, ADMIN_ID
 from extractor import process_document
 
@@ -15,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Diccionario temporal para guardar estado por usuario (en memoria por simplicidad para 1 usuario)
 user_data_store = {}
+
+# Estados para la conversación de carga manual
+GET_ENTITY, GET_AMOUNT, GET_DUE_DATE, GET_CATEGORY, GET_PAYMENT_CODE = range(5)
 
 def is_admin(update: Update) -> bool:
     if update.effective_user.id != ADMIN_ID:
@@ -187,6 +198,143 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(resumen_final, reply_markup=reply_markup, parse_mode='Markdown')
+        return
+
+# --- Flujo de Carga Manual (/nuevo) ---
+
+async def nuevo_gasto_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update): return ConversationHandler.END
+    await update.message.reply_text("📝 **Carga Manual de Gasto**\n\n¿Cuál es la empresa o entidad? (Ej: EPE, AFIP, Alquiler)")
+    return GET_ENTITY
+
+async def get_entity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_entity'] = update.message.text
+    await update.message.reply_text(f"💰 ¿Cuál es el monto total para **{update.message.text}**? (Solo el número)")
+    return GET_AMOUNT
+
+async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        monto = float(update.message.text.replace(',', '.'))
+        context.user_data['manual_amount'] = monto
+        await update.message.reply_text("📅 ¿Cuándo vence? (Formato: DD/MM/AAAA o poné 'hoy')")
+        return GET_DUE_DATE
+    except ValueError:
+        await update.message.reply_text("❌ Por favor, enviá un número válido para el monto.")
+        return GET_AMOUNT
+
+async def get_due_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message.text.lower()
+    if msg == 'hoy':
+        fecha = datetime.now().strftime('%d/%m/%Y')
+    else:
+        fecha = msg
+    
+    context.user_data['manual_date'] = fecha
+    await update.message.reply_text("🔢 ¿Tenés un código de pago o VEP? (Si no tenés, poné '-')")
+    return GET_PAYMENT_CODE
+
+async def get_payment_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_code'] = update.message.text
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🏠 Personal", callback_data='manual_cat_Personal'),
+            InlineKeyboardButton("🏢 SHURIAN", callback_data='manual_cat_SHURIAN')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🏷️ Por último, seleccioná la categoría:", reply_markup=reply_markup)
+    return GET_CATEGORY
+
+async def handle_manual_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    category = query.data.split('_')[-1]
+    
+    entity = context.user_data['manual_entity']
+    amount = context.user_data['manual_amount']
+    date_str = context.user_data['manual_date']
+    code = context.user_data['manual_code']
+
+    try:
+        parsed_date = datetime.strptime(date_str, '%d/%m/%Y').strftime('%Y-%m-%d')
+    except ValueError:
+        parsed_date = datetime.now().strftime('%Y-%m-%d')
+
+    try:
+        from config import supabase
+        supabase.table('expenses').insert({
+            "entity": entity,
+            "category": category,
+            "amount": amount,
+            "due_date": parsed_date,
+            "payment_code": code if code != '-' else None
+        }).execute()
+        
+        await query.edit_message_text(f"✅ **Gasto Guardado Manualmente**\n\n🏢 Entidad: {entity}\n💰 Monto: ${amount:.2f}\n📅 Vence: {date_str}\n🏷️ Categoría: {category}")
+    except Exception as e:
+        logger.error(f"Error carga manual: {e}")
+        await query.edit_message_text("❌ Error al guardar en base de datos.")
+    
+    return ConversationHandler.END
+
+async def cancel_manual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Operación cancelada.")
+    return ConversationHandler.END
+
+# --- Comandos Adicionales ---
+
+async def editar_gasto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update): return
+    
+    try:
+        from config import supabase
+        # Traer los últimos 5 gastos pendientes
+        response = supabase.table('expenses').select('*').eq('status', 'pending').order('due_date', { 'ascending': True }).limit(5).execute()
+        expenses = response.data
+        
+        if not expenses:
+            await update.message.reply_text("No hay gastos pendientes para editar. ¡Estás al día! 🙌")
+            return
+            
+        msg = "🔍 **Gastos Pendientes (Últimos 5):**\n\n"
+        keyboard = []
+        for e in expenses:
+            fecha = datetime.strptime(e['due_date'], '%Y-%m-%d').strftime('%d/%m')
+            msg += f"• {e['entity']} (${e['amount']}) - Vence: {fecha}\n"
+            # Creamos un botón para borrar o marcar como pagado rápido
+            keyboard.append([InlineKeyboardButton(f"✅ Pagado: {e['entity']}", callback_data=f"quickpay_{e['id']}")])
+            
+        msg += "\n*Para editar montos o nombres con precisión, te recomiendo usar el Dashboard Web.*"
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Error en editar_gasto: {e}")
+        await update.message.reply_text("Error al consultar gastos.")
+
+# Modificar handle_callback para manejar quickpay
+async def handle_callback_extended(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    
+    if data.startswith('quickpay_'):
+        expense_id = data.split('_')[1]
+        try:
+            from config import supabase
+            supabase.table('expenses').update({"status": "paid"}).eq('id', expense_id).execute()
+            await query.answer("¡Gasto marcado como pagado!")
+            await query.edit_message_text("✅ Gasto actualizado correctamente.")
+        except Exception as e:
+            await query.answer("Error al actualizar.")
+        return
+
+    # Si es manual_cat_, redirigir al handler de manual
+    if data.startswith('manual_cat_'):
+        return await handle_manual_category(update, context)
+        
+    # De lo contrario, usar el original
+    await handle_callback(update, context)
 
 def main():
     if not TELEGRAM_TOKEN:
@@ -205,9 +353,25 @@ def main():
     job_queue.run_daily(check_pending_expenses, time=hora_aviso, name='Aviso-24h')
 
     # Handlers Base
+    # Handlers Carga Manual
+    manual_conv = ConversationHandler(
+        entry_points=[CommandHandler("nuevo", nuevo_gasto_start)],
+        states={
+            GET_ENTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_entity)],
+            GET_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
+            GET_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_due_date)],
+            GET_PAYMENT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_payment_code)],
+            GET_CATEGORY: [CallbackQueryHandler(handle_manual_category, pattern='^manual_cat_')]
+        },
+        fallbacks=[CommandHandler("cancelar", cancel_manual)]
+    )
+
+    # Handlers Base
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("editar", editar_gasto))
+    app.add_handler(manual_conv)
     app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_document))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(CallbackQueryHandler(handle_callback_extended))
 
     logger.info("Iniciando el bot y JobQueue diario...")
     app.run_polling()

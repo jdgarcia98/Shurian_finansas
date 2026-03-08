@@ -26,7 +26,7 @@ def process_document(file_path: str) -> dict:
             pages[0].save(temp_image_path, 'JPEG')
             image_to_process = Image.open(temp_image_path)
         except Exception as e:
-            print(f"Error convirtiendo PDF a imagen: {e}")
+            print(f"Error convirtiendo PDF a imagen (¿Poppler instalado?): {e}")
             return None
     else:
         # Asumimos que es una imagen directa (JPG, PNG)
@@ -42,16 +42,17 @@ def process_document(file_path: str) -> dict:
         model = genai.GenerativeModel('gemini-flash-latest')
         
         prompt = """
-        Extraer obligatoriamente los siguientes datos de la factura o ticket adjunto en formato JSON estricto.
-        (Si detectas un código de barras visual, extrae también el string numérico).
+        Eres un experto en procesar facturas y documentos financieros argentinos (VEPs, boletas de servicio, impuestos).
+        Extrae obligatoriamente los siguientes datos del documento adjunto en formato JSON estricto.
         
-        Estructura JSON requerida: Moda: [JSON puro]
-        {
-          "monto_total": "Solo el número final a pagar en formato 0.00",
-          "fecha_vencimiento": "Formato DD/MM/AAAA",
-          "codigo_pago": "Link, Banelco, VEP, o el código numérico de barras extraído visualmente",
-          "entidad": "Nombre de la empresa o impuesto"
-        }
+        Campos requeridos:
+        1. "monto_total": El monto final a pagar. (Solo el número).
+        2. "fecha_vencimiento": La fecha de vencimiento en formato DD/MM/AAAA.
+        3. "codigo_pago": El código para pagar (Link, Banelco, VEP, o el string numérico del código de barras si lo detectas).
+        4. "entidad": El nombre de la empresa, organismo o impuesto (p. ej. AFIP, EPE, Municipalidad).
+
+        IMPORTANTE: Si detectas un código de barras visual, extrae el número largo que lo representa.
+        Responde exclusivamente con el objeto JSON, sin texto adicional.
         """
         
         response = model.generate_content([prompt, image_to_process])
@@ -66,21 +67,34 @@ def process_document(file_path: str) -> dict:
         
         # Parseo seguro a flotante
         try:
-            monto_str = data.get("monto_total", "0").replace("$", "").replace(" ", "").replace(".", "")
-            if "," in data.get("monto_total", "0"):
-                monto_str = data.get("monto_total", "0").replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+            monto_raw = str(data.get("monto_total", "0"))
+            monto_raw = monto_raw.replace("$", "").replace(" ", "")
             
-            data["monto_total"] = float(monto_str)
+            # Verificar si existe alguna coma o punto
+            if "," in monto_raw and "." in monto_raw:
+                # Determinar cuál es el separador de decimales (el que está más a la derecha)
+                if monto_raw.rfind(",") > monto_raw.rfind("."):
+                    monto_raw = monto_raw.replace(".", "").replace(",", ".")
+                else:
+                    monto_raw = monto_raw.replace(",", "")
+            elif "," in monto_raw:
+                monto_raw = monto_raw.replace(",", ".")
+            # Si solo tiene punto, lo dejamos como está (ej. 1500.50)
+            
+            data["monto_total"] = float(monto_raw)
         except ValueError:
             data["monto_total"] = 0.0
             
         return data
         
-    except json.JSONDecodeError:
-        print(f"Error parseando JSON de Gemini. Respuesta cruda: {text_clean}")
+    except json.JSONDecodeError as je:
+        print(f"Error parseando JSON de Gemini. Error: {je}")
+        print(f"Respuesta cruda de Gemini: ------------------\n{text}\n------------------")
         return None
     except Exception as e:
-        print(f"Error en el procesamiento con Gemini: {e}")
+        print(f"Error inesperado en el procesamiento con Gemini: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     finally:
         # Limpieza de archivo temporal si fue creado a partir de un PDF
