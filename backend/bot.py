@@ -143,35 +143,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ext_data = user_data_store[user_id]['extracted_data']
         category = user_data_store[user_id]['category']
         
-        # Validar y formatear fecha para Supabase (ideal AAAA-MM-DD o parseo inteligente)
+        # Validar y formatear fecha
         raw_date = ext_data.get('fecha_vencimiento', '')
         try:
             parsed_date = datetime.strptime(raw_date, '%d/%m/%Y').strftime('%Y-%m-%d')
         except ValueError:
-            # Fallback simple si Gemini tira otro formato u omite
             parsed_date = datetime.now().strftime('%Y-%m-%d')
+        
+        entity = ext_data.get('entidad', 'N/A')
+        amount = ext_data.get('monto_total', 0.0)
+        invoice_number = ext_data.get('numero_comprobante', None)
+        payment_code = ext_data.get('codigo_pago', None)
             
         try:
             from config import supabase
-            # TODO: Idealmente subir el PDF a Storage y guardar la URL.
-            # Por ahora guardamos el registro en la BD principal
-            response = supabase.table('expenses').insert({
-                "user_id": SUPABASE_USER_ID,
-                "entity": ext_data.get('entidad', 'N/A'),
-                "category": category,
-                "amount": ext_data.get('monto_total', 0.0),
-                "due_date": parsed_date,
-                "payment_code": ext_data.get('codigo_pago', 'N/A')
-            }).execute()
             
-            await query.edit_message_text(f"✅ ¡Gasto de **{category}** guardado exitosamente en la base de datos!", parse_mode='Markdown')
+            # --- VERIFICACIÓN DE DUPLICADOS ---
+            if invoice_number:
+                # Buscar por número de comprobante
+                dup_check = supabase.table('expenses').select('id').eq('user_id', SUPABASE_USER_ID).eq('invoice_number', str(invoice_number)).execute()
+            else:
+                # Fallback: buscar por entidad + monto + fecha
+                dup_check = supabase.table('expenses').select('id') \
+                    .eq('user_id', SUPABASE_USER_ID) \
+                    .eq('entity', entity) \
+                    .eq('amount', amount) \
+                    .eq('due_date', parsed_date).execute()
+            
+            if dup_check.data and len(dup_check.data) > 0:
+                await query.edit_message_text(
+                    f"⚠️ **Duplicado detectado**\n\n"
+                    f"Ya existe un gasto de `{entity}` por `${amount:.2f}` con vencimiento `{raw_date}` en la base de datos.\n"
+                    f"No se guardó para evitar duplicados.",
+                    parse_mode='Markdown'
+                )
+            else:
+                supabase.table('expenses').insert({
+                    "user_id": SUPABASE_USER_ID,
+                    "entity": entity,
+                    "category": category,
+                    "amount": amount,
+                    "due_date": parsed_date,
+                    "payment_code": payment_code,
+                    "invoice_number": str(invoice_number) if invoice_number else None
+                }).execute()
+                await query.edit_message_text(
+                    f"✅ ¡Gasto de **{category}** guardado exitosamente!"
+                    + (f"\n🧾 Comprobante: `{invoice_number}`" if invoice_number else ""),
+                    parse_mode='Markdown'
+                )
             
         except Exception as e:
             logger.error(f"Error insertando en BD: {e}")
             await query.edit_message_text("❌ Ocurrió un error al guardar en la base de datos.")
             
         finally:
-            # Limpiar estado y archivo
             file_path = user_data_store[user_id].get("file_path")
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
@@ -267,16 +293,31 @@ async def handle_manual_category(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         from config import supabase
-        supabase.table('expenses').insert({
-            "user_id": SUPABASE_USER_ID,
-            "entity": entity,
-            "category": category,
-            "amount": amount,
-            "due_date": parsed_date,
-            "payment_code": code if code != '-' else None
-        }).execute()
         
-        await query.edit_message_text(f"✅ **Gasto Guardado Manualmente**\n\n🏢 Entidad: {entity}\n💰 Monto: ${amount:.2f}\n📅 Vence: {date_str}\n🏷️ Categoría: {category}")
+        # --- VERIFICACIÓN DE DUPLICADOS (carga manual, sin número de comprobante) ---
+        dup_check = supabase.table('expenses').select('id') \
+            .eq('user_id', SUPABASE_USER_ID) \
+            .eq('entity', entity) \
+            .eq('amount', amount) \
+            .eq('due_date', parsed_date).execute()
+        
+        if dup_check.data and len(dup_check.data) > 0:
+            await query.edit_message_text(
+                f"⚠️ **Duplicado detectado**\n\n"
+                f"Ya existe un gasto de `{entity}` por `${amount:.2f}` con vencimiento `{date_str}`.\n"
+                f"No se guardó para evitar duplicados.",
+                parse_mode='Markdown'
+            )
+        else:
+            supabase.table('expenses').insert({
+                "user_id": SUPABASE_USER_ID,
+                "entity": entity,
+                "category": category,
+                "amount": amount,
+                "due_date": parsed_date,
+                "payment_code": code if code != '-' else None
+            }).execute()
+            await query.edit_message_text(f"✅ **Gasto Guardado Manualmente**\n\n🏢 Entidad: {entity}\n💰 Monto: ${amount:.2f}\n📅 Vence: {date_str}\n🏷️ Categoría: {category}")
     except Exception as e:
         logger.error(f"Error carga manual: {e}")
         await query.edit_message_text("❌ Error al guardar en base de datos.")
@@ -350,12 +391,17 @@ def main():
 
     # Tareas en JobQueue
     from alerts import check_pending_expenses
+    from subscriptions_cron import inject_monthly_subscriptions
     from datetime import time
     
-    # Hora de revisión: 09:00 AM todos los días
     job_queue = app.job_queue
+    # Alerta de vencimientos: todos los días a las 09:00 AM
     hora_aviso = time(hour=9, minute=0, second=0)
     job_queue.run_daily(check_pending_expenses, time=hora_aviso, name='Aviso-24h')
+    
+    # Cron de suscripciones: el día 1 de cada mes a las 08:00 AM
+    hora_subs = time(hour=8, minute=0, second=0)
+    job_queue.run_monthly(inject_monthly_subscriptions, when=hora_subs, day=1, name='Subs-Mensuales')
 
     # Handlers Base
     # Handlers Carga Manual

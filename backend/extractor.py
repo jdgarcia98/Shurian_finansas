@@ -67,6 +67,7 @@ def process_document(file_path: str) -> dict:
         2. "fecha_vencimiento": La fecha de vencimiento en formato DD/MM/AAAA.
         3. "codigo_pago": El código para pagar (Link, Banelco, VEP, o el string numérico del código de barras).
         4. "entidad": El nombre de la empresa u organismo.
+        5. "numero_comprobante": El número único de factura, comprobante, o boleta. Buscá campos como "N° Factura", "Comprobante N°", "N° de Operación", "Número de Boleta", o similares. Si no existe un número identificador, devolvé null.
 
         Si no encuentras un dato, pon null. 
         NO agregues texto antes ni después del JSON. NO uses bloques de código markdown.
