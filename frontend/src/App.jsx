@@ -168,9 +168,7 @@ export default function App() {
     }, { personal: 0, shurian: 0 })
 
     // Termómetro SHURIAN
-    const today = new Date()
-    const daysInMonth = getDaysInMonth(today)
-    const monthlyGoal = DAILY_GOAL * daysInMonth
+    const monthlyGoal = DAILY_GOAL * 20
     const shurianPendingCost = pendingTotals.shurian
     const progressPct = Math.min((shurianPendingCost / monthlyGoal) * 100, 100)
     const progressColor = progressPct < 40 ? '#22c55e' : progressPct < 70 ? '#f59e0b' : '#ef4444'
@@ -292,7 +290,7 @@ export default function App() {
                             <span style={{ fontWeight: 700, color: '#f1f5f9' }}>TERMÓMETRO DE FACTURACIÓN — SHURIAN</span>
                         </div>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0 }}>
-                            Meta diaria: ${DAILY_GOAL.toLocaleString('es-AR')} × {daysInMonth} días = <strong style={{ color: '#f1f5f9' }}>${monthlyGoal.toLocaleString('es-AR')}</strong> este mes
+                            Meta diaria: ${DAILY_GOAL.toLocaleString('es-AR')} × 20 días = <strong style={{ color: '#f1f5f9' }}>${monthlyGoal.toLocaleString('es-AR')}</strong> este mes
                         </p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
