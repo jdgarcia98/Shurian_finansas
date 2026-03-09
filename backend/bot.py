@@ -11,7 +11,7 @@ from telegram.ext import (
     ConversationHandler, 
     filters
 )
-from config import TELEGRAM_TOKEN, ADMIN_ID
+from config import TELEGRAM_TOKEN, ADMIN_ID, SUPABASE_USER_ID
 from extractor import process_document
 
 # Configuración de logging
@@ -156,6 +156,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # TODO: Idealmente subir el PDF a Storage y guardar la URL.
             # Por ahora guardamos el registro en la BD principal
             response = supabase.table('expenses').insert({
+                "user_id": SUPABASE_USER_ID,
                 "entity": ext_data.get('entidad', 'N/A'),
                 "category": category,
                 "amount": ext_data.get('monto_total', 0.0),
@@ -267,6 +268,7 @@ async def handle_manual_category(update: Update, context: ContextTypes.DEFAULT_T
     try:
         from config import supabase
         supabase.table('expenses').insert({
+            "user_id": SUPABASE_USER_ID,
             "entity": entity,
             "category": category,
             "amount": amount,
