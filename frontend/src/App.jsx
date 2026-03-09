@@ -13,20 +13,27 @@ import {
     Edit2,
     Trash2,
     X,
-    Save
+    Save,
+    LogOut
 } from 'lucide-react'
 import { format, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
 
-// Inicializar cliente Supabase desde el Dashboard usando variables de entorno
+// Inicializar cliente Supabase
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 export default function App() {
+    const [session, setSession] = useState(null)
+    const [authLoading, setAuthLoading] = useState(true)
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [isRegistering, setIsRegistering] = useState(false)
+
     const [expenses, setExpenses] = useState([])
-    const [filter, setFilter] = useState('ALL') // 'ALL', 'Personal', 'SHURIAN'
+    const [filter, setFilter] = useState('ALL')
     const [loading, setLoading] = useState(true)
     const [editingId, setEditingId] = useState(null)
     const [isCreating, setIsCreating] = useState(false)
@@ -41,22 +48,54 @@ export default function App() {
     })
 
     useEffect(() => {
-        fetchExpenses()
+        // Verificar sesión inicial
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session)
+            setAuthLoading(false)
+        })
 
-        // Suscribirse a cambios en tiempo real
-        const subscription = supabase
-            .channel('public:expenses')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
-                fetchExpenses()
-            })
-            .subscribe()
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session)
+        })
 
-        return () => {
-            supabase.removeChannel(subscription)
-        }
+        return () => subscription.unsubscribe()
     }, [])
 
+    useEffect(() => {
+        if (session) {
+            fetchExpenses()
+            const subscription = supabase
+                .channel('public:expenses')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
+                    fetchExpenses()
+                })
+                .subscribe()
+
+            return () => {
+                supabase.removeChannel(subscription)
+            }
+        }
+    }, [session])
+
+    const handleLogin = async (e) => {
+        e.preventDefault()
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) alert('Error: ' + error.message)
+    }
+
+    const handleSignUp = async (e) => {
+        e.preventDefault()
+        const { error } = await supabase.auth.signUp({ email, password })
+        if (error) alert('Error: ' + error.message)
+        else alert('¡Revisá tu mail para confirmar el registro!')
+    }
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut()
+    }
+
     const fetchExpenses = async () => {
+        if (!session) return
         setLoading(true)
         const { data, error } = await supabase
             .from('expenses')
@@ -129,12 +168,53 @@ export default function App() {
 
     const nextDue = expenses.find(e => e.status === 'pending')
 
+    if (authLoading) {
+        return <div className="auth-container"><div className="stat-label">Cargando seguridad...</div></div>
+    }
+
+    if (!session) {
+        return (
+            <div className="auth-container">
+                <div className="auth-card glass-card">
+                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                        <h1 className="title" style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>SHURIAN Finance</h1>
+                        <p style={{ color: '#94a3b8' }}>{isRegistering ? 'Crear nueva cuenta' : 'Ingresar al Dashboard'}</p>
+                    </div>
+                    <form onSubmit={isRegistering ? handleSignUp : handleLogin}>
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label className="stat-label">EMAIL</label>
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@email.com" required />
+                        </div>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label className="stat-label">CONTRASEÑA</label>
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+                        </div>
+                        <button className="primary" style={{ width: '100%', padding: '1rem', background: 'var(--neon-green)', color: 'black' }}>
+                            {isRegistering ? 'Registrarse' : 'Entrar'}
+                        </button>
+                    </form>
+                    <button
+                        onClick={() => setIsRegistering(!isRegistering)}
+                        style={{ background: 'transparent', color: '#94a3b8', width: '100%', marginTop: '1rem', fontSize: '0.875rem' }}
+                    >
+                        {isRegistering ? '¿Ya tenés cuenta? Ingresá' : '¿No tenés cuenta? Registrate'}
+                    </button>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="dashboard-container">
             <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
                 <div>
                     <h1 className="title" style={{ margin: 0 }}>SHURIAN Finance</h1>
-                    <p style={{ color: '#94a3b8', marginTop: '0.5rem' }}>Control de gastos inteligente</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <p style={{ color: '#94a3b8', margin: 0 }}>{session.user.email}</p>
+                        <button onClick={handleLogout} style={{ background: 'transparent', color: '#ef4444', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <LogOut size={12} /> CERRAR SESIÓN
+                        </button>
+                    </div>
                 </div>
                 <div className="glass-card" style={{ padding: '0.75rem 1.5rem', display: 'flex', gap: '1rem', borderRadius: '16px' }}>
                     <button
@@ -156,7 +236,7 @@ export default function App() {
                 <button
                     className="primary"
                     onClick={() => setIsCreating(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--neon-green)' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--neon-green)', color: 'black' }}
                 >
                     <Calendar size={18} /> Nuevo Gasto
                 </button>
@@ -176,54 +256,50 @@ export default function App() {
                             <button onClick={() => setIsCreating(false)} style={{ background: 'transparent' }}><X size={20} /></button>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                            <div className="stat-card" style={{ background: 'transparent', padding: 0 }}>
+                            <div>
                                 <label className="stat-label">ENTIDAD</label>
                                 <input
                                     type="text"
                                     placeholder="Ej: EPE, AFIP..."
                                     value={newExpense.entity}
                                     onChange={(e) => setNewExpense({ ...newExpense, entity: e.target.value })}
-                                    style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem' }}
                                 />
                             </div>
-                            <div className="stat-card" style={{ background: 'transparent', padding: 0 }}>
+                            <div>
                                 <label className="stat-label">MONTO</label>
                                 <input
                                     type="number"
                                     placeholder="0.00"
                                     value={newExpense.amount}
                                     onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                                    style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem' }}
                                 />
                             </div>
-                            <div className="stat-card" style={{ background: 'transparent', padding: 0 }}>
+                            <div>
                                 <label className="stat-label">VENCIMIENTO</label>
                                 <input
                                     type="date"
                                     value={newExpense.due_date}
                                     onChange={(e) => setNewExpense({ ...newExpense, due_date: e.target.value })}
-                                    style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem' }}
                                 />
                             </div>
-                            <div className="stat-card" style={{ background: 'transparent', padding: 0 }}>
+                            <div>
                                 <label className="stat-label">CATEGORÍA</label>
                                 <select
                                     value={newExpense.category}
                                     onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
-                                    style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem' }}
+                                    style={{ width: '100%', background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem' }}
                                 >
                                     <option value="Personal">Personal</option>
                                     <option value="SHURIAN">SHURIAN</option>
                                 </select>
                             </div>
-                            <div className="stat-card" style={{ background: 'transparent', padding: 0, gridColumn: '1 / -1' }}>
+                            <div style={{ gridColumn: '1 / -1' }}>
                                 <label className="stat-label">CÓDIGO DE PAGO (OPCIONAL)</label>
                                 <input
                                     type="text"
                                     placeholder="VEP, Banelco, Link..."
                                     value={newExpense.payment_code}
                                     onChange={(e) => setNewExpense({ ...newExpense, payment_code: e.target.value })}
-                                    style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.75rem', borderRadius: '12px', color: 'white', marginTop: '0.5rem', width: '100%' }}
                                 />
                             </div>
                         </div>
@@ -323,26 +399,22 @@ export default function App() {
                                         type="text"
                                         value={editForm.entity}
                                         onChange={(e) => setEditForm({ ...editForm, entity: e.target.value })}
-                                        style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.5rem', borderRadius: '8px', color: 'white' }}
                                     />
                                     <input
                                         type="number"
                                         value={editForm.amount}
                                         onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
-                                        style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.5rem', borderRadius: '8px', color: 'white' }}
                                     />
                                     <input
                                         type="date"
                                         value={editForm.due_date}
                                         onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
-                                        style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.5rem', borderRadius: '8px', color: 'white' }}
                                     />
                                     <input
                                         type="text"
                                         placeholder="Código de pago"
                                         value={editForm.payment_code || ''}
                                         onChange={(e) => setEditForm({ ...editForm, payment_code: e.target.value })}
-                                        style={{ background: '#1f2937', border: '1px solid #374151', padding: '0.5rem', borderRadius: '8px', color: 'white' }}
                                     />
                                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
                                         <button className="primary" onClick={saveEdit} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
@@ -381,7 +453,7 @@ export default function App() {
                                     {expense.status === 'pending' && (
                                         <button
                                             className="primary"
-                                            style={{ width: '100%', marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                                            style={{ width: '100%', marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'var(--accent-blue)' }}
                                             onClick={() => markAsPaid(expense.id)}
                                         >
                                             <CheckCircle2 size={18} />

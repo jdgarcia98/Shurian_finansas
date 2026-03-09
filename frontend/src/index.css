@@ -109,8 +109,15 @@ body {
   border-left-color: var(--neon-red);
 }
 
-.neon-green { color: var(--neon-green); text-shadow: 0 0 10px rgba(34, 197, 94, 0.4); }
-.neon-red { color: var(--neon-red); text-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+.neon-green {
+  color: var(--neon-green);
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+}
+
+.neon-red {
+  color: var(--neon-red);
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
 
 button {
   cursor: pointer;
@@ -137,5 +144,56 @@ button.primary:hover {
   font-weight: 700;
 }
 
-.badge-personal { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-.badge-shurian { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+.badge-personal {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.badge-shurian {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+/* Auth Styles */
+.auth-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  animation: slideIn 0.5s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+input {
+  width: 100%;
+  background: #1f2937;
+  border: 1px solid #374151;
+  padding: 0.75rem;
+  border-radius: 12px;
+  color: white;
+  margin-top: 0.5rem;
+  font-family: inherit;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
