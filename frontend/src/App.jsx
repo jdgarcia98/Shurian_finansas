@@ -14,7 +14,8 @@ import {
     Trash2,
     X,
     Save,
-    LogOut
+    LogOut,
+    RefreshCw
 } from 'lucide-react'
 import { format, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -92,6 +93,28 @@ export default function App() {
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
+    }
+
+    const syncOldExpenses = async () => {
+        if (!session) return
+        const confirmSync = confirm("Esto vinculará todos los gastos cargados anteriormente a tu cuenta. ¿Continuar?")
+        if (!confirmSync) return
+
+        setLoading(true)
+        // Intentar actualizar todos los registros que NO tengan user_id
+        const { error } = await supabase
+            .from('expenses')
+            .update({ user_id: session.user.id })
+            .is('user_id', null)
+
+        if (error) {
+            console.error('Error syncing:', error)
+            alert('Error al sincronizar: ' + error.message)
+        } else {
+            alert('¡Sincronización completada! Tus gastos antiguos ahora deberían ser visibles.')
+            fetchExpenses()
+        }
+        setLoading(false)
     }
 
     const fetchExpenses = async () => {
@@ -209,8 +232,11 @@ export default function App() {
             <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
                 <div>
                     <h1 className="title" style={{ margin: 0 }}>SHURIAN Finance</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
                         <p style={{ color: '#94a3b8', margin: 0 }}>{session.user.email}</p>
+                        <button onClick={syncOldExpenses} style={{ background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent-blue)', padding: '4px 8px', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid var(--accent-blue)' }}>
+                            <RefreshCw size={12} /> SINCRONIZAR DATOS
+                        </button>
                         <button onClick={handleLogout} style={{ background: 'transparent', color: '#ef4444', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <LogOut size={12} /> CERRAR SESIÓN
                         </button>
@@ -309,6 +335,7 @@ export default function App() {
                                 if (!newExpense.entity || !newExpense.amount) return alert('Completá entidad y monto')
                                 const { error } = await supabase.from('expenses').insert([{
                                     ...newExpense,
+                                    user_id: session.user.id,
                                     amount: parseFloat(newExpense.amount)
                                 }])
                                 if (error) console.error(error)
